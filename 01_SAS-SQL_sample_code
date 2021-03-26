@@ -1,0 +1,134 @@
+*'; *"; run; quit; */;
+dm output 'clear';
+dm log 'clear';
+
+proc datasets nolist library=work kill; run; quit;
+
+* *************************************************************** *;
+%set_caseroot(find_file=header.sas)
+%include "&caseroot.\header.sas";
+* *************************************************************** *;
+
+proc sql;
+
+/*Get loan IDs for loans at issue.*/
+CREATE TABLE int1 AS
+SELECT 
+	*
+FROM raw.deal
+WHERE (BloombergDealName LIKE '%MSIX%'
+	OR BloombergDealName LIKE '%IXIS%'
+	OR BloombergDealName LIKE '%NTIX%')
+	AND BloombergDealName NOT LIKE 'IXIS 2004-HE4'
+	AND BloombergDealName NOT LIKE 'IXIS 2005-HE1'
+ORDER BY BloombergDealName;
+
+ALTER TABLE int1 
+DROP COLUMN Servicer;
+
+/*Merge on loan_setup dataset.*/
+CREATE TABLE int2 AS
+SELECT 
+	a.*
+	, b.*
+FROM int1 AS a
+LEFT JOIN raw.loan_setup AS b
+ON a.ABSNetLoanDealPK = b.ABSNetLoanDealFK;
+
+quit;
+
+/*Isolate only MSIX 2006-2 loans.*/
+proc sql;
+
+CREATE TABLE int3 AS
+SELECT 
+	*
+FROM int2
+WHERE rawdealname LIKE '%MS06I2%';
+
+/*Manually fix two irregular loanids from loan tape.*/
+CREATE TABLE loantapeid_patch AS
+SELECT 
+	*
+	, CASE WHEN loanid = '332290A' THEN '3322901'
+		WHEN loanid = '332290B' THEN '3322902'
+		ELSE loanid END AS loanid_patch
+FROM mst.Loan_tape_msix20062;
+
+quit;
+
+/*Trim the loanid variable in both datasets to remove leading and trailing zeros or spaces.*/
+data loantapeid_trim;
+	set loantapeid_patch;
+	loanid_num = input(loanid_patch, 10.);
+	loanid_trim = put(loanid_num, 10.);
+run;
+data absnetloanid_trim;
+	set int3;
+	loanid_num = input(loanid, 10.);
+	loanid_trim = put(loanid_num, 10.);
+run;
+
+
+proc sql;
+
+/*Merge on the SHELF information from loan tape.*/
+CREATE TABLE int4_msix20062 AS
+SELECT 
+	a.*
+	, CASE WHEN b.shelf = 'IXIS' THEN '1'
+		WHEN b.shelf = 'MSHEL' THEN '0'
+		ELSE '' END AS natixisflag
+FROM absnetloanid_trim AS a
+LEFT JOIN loantapeid_trim AS b
+ON a.loanid_trim = b.loanid_trim
+ORDER BY natixisflag;
+
+/*Create netaxis_flag for remaining 8 deals.*/
+CREATE TABLE int4_eight_deals AS
+SELECT 
+	*
+	, CASE WHEN RawDealName IN ('MSIX2006-1') THEN ''
+		ELSE '1' END AS natixisflag
+FROM int2
+WHERE rawdealname NOT IN ('MS06I2');
+
+quit;
+
+/*Convert the natixis_flag into a numeric variable.*/
+data int4_msix20062;
+	set int4_msix20062;
+	natixis_flag = input(natixisflag, 10.);
+	drop natixisflag;
+run;
+data int4_eight_deals;
+	set int4_eight_deals;
+	natixis_flag = input(natixisflag, 10.);
+	drop natixisflag;
+run;
+
+proc sql;
+
+/*Stack MSIX 2006-2 and other eight deals.*/
+CREATE TABLE mst.natixis_deal_setup AS
+SELECT *
+FROM int4_msix20062
+OUTER UNION CORR
+SELECT *
+FROM int4_eight_deals;
+
+/*Merge on lossactivity dataset.
+CREATE TABLE mst.natixis_deal_setup_lossactivity AS 
+SELECT 
+	a.*
+	, b.*
+FROM int5 AS a
+LEFT JOIN raw.lossactivity AS b
+ON a.ABSNetLoanPK = b.ABSNetLoanFK;
+
+Commented out because lossactivity does not include LoanHistStatus for non-loss bearing loans */
+
+quit;
+
+/*Compare with checking dataset.*/
+proc compare base = mst.natixis_deal_setup_lossactivity compare = check.natixis_lossactivity listvar; run;
