@@ -1,0 +1,52 @@
+# Reset environment -----------------------------------------------------
+dapg::reset_session()
+
+header <- dapg::source_header()
+
+library(readr)
+----------------------------------------------------------------------------
+
+###################
+# Import Database # 
+###################
+    
+# Import penalties from SEED database
+matched_seed <- read.csv(header$datasets("mst/sca/identified_matches/master_sets/seed_matched_databse2020-07-28.csv"))
+
+############
+# Analysis # 
+############
+  
+#Subset imported data to variables of interest
+subset_seed <- select(matched_seed, c(seed_doc_num,seed_doc_date,match))
+
+#Calculate fiscal year for each penalty
+subset_seed$fiscal_year <- ifelse(month(matched_seed$seed_doc_date) %in% c(10,11,12), year(matched_seed$seed_doc_date)+1, year(matched_seed$seed_doc_date)) 
+  
+#Identify SEC filings with matching actions from SCA database
+subset_seed$sca_pair <- ifelse(is.na(matched_seed$match)|matched_seed$match=="N",0,1)
+
+#Count number of matching SCA actions per SEC filing
+n_sca_pair <- aggregate(subset_seed$sca_pair, by=list(seed_doc_num=subset_seed$seed_doc_num, fiscal_year=subset_seed$fiscal_year), FUN=sum)
+
+#Create flags for no matching SCA action or with matching SCA action
+n_sca_pair$sca_match <- ifelse(n_sca_pair$x > 0, 1, 0)
+n_sca_pair$no_sca_match <- ifelse(n_sca_pair$x == 0, 1, 0)
+  
+#Group by fiscal year and summarize
+n_sca_match_by_fy <- n_sca_pair %>%
+    select(fiscal_year,sca_match,no_sca_match) %>%
+    group_by(fiscal_year) %>%
+    summarise(num_sca_match = sum(sca_match), num_no_sca_match = sum(no_sca_match))
+
+#Calculate percent matches for sanity checking
+n_sca_match_by_fy$perc_match <- (n_sca_match_by_fy$num_sca_match/(n_sca_match_by_fy$num_sca_match + n_sca_match_by_fy$num_no_sca_match))
+n_sca_match_by_fy$perc_no_match <- (n_sca_match_by_fy$num_no_sca_match/(n_sca_match_by_fy$num_sca_match + n_sca_match_by_fy$num_no_sca_match))
+----------------------------------------------------------------------------
+
+###################
+# Export to Excel # 
+###################
+  
+# Export -------------------------------------------------------------------
+write.xlsx(n_sca_match_by_fy, header$export("sca_matching/analyses/07r_matching_sec_actions_by_fy.xlsx"), sheetName="matching_sec_actions_by_fy")
