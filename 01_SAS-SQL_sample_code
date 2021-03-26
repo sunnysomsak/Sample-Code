@@ -11,7 +11,7 @@ proc datasets nolist library=work kill; run; quit;
 
 proc sql;
 
-/*Get loan IDs for loans at issue.*/
+/*Subset raw data (loan list) to only include loans of interest using deal name.*/
 CREATE TABLE int1 AS
 SELECT 
 	*
@@ -26,7 +26,7 @@ ORDER BY BloombergDealName;
 ALTER TABLE int1 
 DROP COLUMN Servicer;
 
-/*Merge on loan_setup dataset.*/
+/*Merge on information from another table to subsetted data.*/
 CREATE TABLE int2 AS
 SELECT 
 	a.*
@@ -37,7 +37,7 @@ ON a.ABSNetLoanDealPK = b.ABSNetLoanDealFK;
 
 quit;
 
-/*Isolate only MSIX 2006-2 loans.*/
+/*Further restrict the combined dataset using newly merged variable.*/
 proc sql;
 
 CREATE TABLE int3 AS
@@ -46,7 +46,7 @@ SELECT
 FROM int2
 WHERE rawdealname LIKE '%MS06I2%';
 
-/*Manually fix two irregular loanids from loan tape.*/
+/*Manually fix two irregular data points in Loan Tape.*/
 CREATE TABLE loantapeid_patch AS
 SELECT 
 	*
@@ -57,7 +57,7 @@ FROM mst.Loan_tape_msix20062;
 
 quit;
 
-/*Trim the loanid variable in both datasets to remove leading and trailing zeros or spaces.*/
+/*Standardize key variable of Loan Tape to facilitate further merges (remove leading and trailing zeros or spaces).*/
 data loantapeid_trim;
 	set loantapeid_patch;
 	loanid_num = input(loanid_patch, 10.);
@@ -72,7 +72,7 @@ run;
 
 proc sql;
 
-/*Merge on the SHELF information from loan tape.*/
+/*Merge on information from Loan Tape.*/
 CREATE TABLE int4_msix20062 AS
 SELECT 
 	a.*
@@ -84,7 +84,7 @@ LEFT JOIN loantapeid_trim AS b
 ON a.loanid_trim = b.loanid_trim
 ORDER BY natixisflag;
 
-/*Create netaxis_flag for remaining 8 deals.*/
+/*Create flag for deals of interest.*/
 CREATE TABLE int4_eight_deals AS
 SELECT 
 	*
@@ -95,7 +95,7 @@ WHERE rawdealname NOT IN ('MS06I2');
 
 quit;
 
-/*Convert the natixis_flag into a numeric variable.*/
+/*Convert the flag into a numeric variable.*/
 data int4_msix20062;
 	set int4_msix20062;
 	natixis_flag = input(natixisflag, 10.);
@@ -109,7 +109,7 @@ run;
 
 proc sql;
 
-/*Stack MSIX 2006-2 and other eight deals.*/
+/*Stack datasets for separate deals.*/
 CREATE TABLE mst.natixis_deal_setup AS
 SELECT *
 FROM int4_msix20062
@@ -117,7 +117,7 @@ OUTER UNION CORR
 SELECT *
 FROM int4_eight_deals;
 
-/*Merge on lossactivity dataset.
+/*Merge on lossactivity dataset.*/
 CREATE TABLE mst.natixis_deal_setup_lossactivity AS 
 SELECT 
 	a.*
@@ -125,8 +125,6 @@ SELECT
 FROM int5 AS a
 LEFT JOIN raw.lossactivity AS b
 ON a.ABSNetLoanPK = b.ABSNetLoanFK;
-
-Commented out because lossactivity does not include LoanHistStatus for non-loss bearing loans */
 
 quit;
 
