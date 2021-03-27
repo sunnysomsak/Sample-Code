@@ -1,0 +1,135 @@
+/*******************************************************************
+ 		SEED: Heat Map of Allegations For Public Company Defendants
+ 		Last Updated 01.15.2021
+*******************************************************************/
+
+*'; *"; run; quit;  */;
+
+proc datasets library=work nolist nowarn kill; run; quit;
+
+* ********************************************************************* ;
+%set_caseroot(find_file=header.sas)
+%include "&caseroot./header.sas";
+* ********************************************************************* ;
+%let datab = "&windata.\import\seed_database\export_2020_11_05.xlsx";
+%let outf = "&exportdir./publications/2020_fall/02_Heatmap_Allegation_Type_2021_01_15.xlsx";
+
+/*This code generates the output for Number of actions by defendant type across years in the SEED publication. */
+
+proc import datafile = &datab. out = nyu_export dbms = excelcs replace;
+run;
+
+/*Subset imported data. Exclude relief defendants, limit to initial docs.*/ 
+data cleaned_export;
+   set nyu_export (keep = case_id defendant_id entry_id doc_date source_type doc_number def_type IsReliefDefendant Disgorg_Amount Civil_amount 
+                           amount_pre_judge other_monetary_penalty_amount action_primary_category initial
+                  cooperation doc_date resolution amount_total  non_prosecution_agree defer_prosecution_agree);
+   /*Relief defendant are excluded.*/
+   where IsReliefDefendant = 0 and def_type in 
+                  ("Public Company", "Subsidiary of Public Company");
+   /*Set end of SEC Fiscal Year in September, split each year in half.*/
+   if month(doc_date) in (10,11,12) then fiscal_year_whole = year(doc_date) +1;
+   else fiscal_year_whole = year(doc_date);
+   if month(doc_date) in (10,11,12) then fiscal_year_half = year(doc_date) +1;
+   else if month(doc_date) in (4,5,6,7,8,9) then fiscal_year_half = year(doc_date) +0.5;
+   else fiscal_year_half = year(doc_date);
+   /*"Define "Civil Action" and "Administrative Proceeding" cases.*/
+   if source_type in ("Complaint","Litigation Release","Press Release--Civil Action","Court Docket Document") then
+      civil_action = 1;
+   else admin_proceeding = 1;
+run;
+
+/*Define fiscal year of initiation based on the doc_date (fiscal_year) associated with the first entry for that action-defendant.*/
+proc sort data = cleaned_export;
+by case_id defendant_id fiscal_year_whole;
+run;
+
+data fiscal_year;
+   set cleaned_export(where = (initial = 1));
+   by case_id defendant_id;
+   if first.defendant_id then output;
+run;
+
+proc sql;
+   CREATE TABLE cases_by_def_year AS 
+    SELECT DISTINCT 
+      case_id
+      , fiscal_year_whole
+      , fiscal_year_half
+      , public, sub
+      , public_sub
+   FROM fiscal_year
+   WHERE fiscal_year_whole GE 2010
+   ORDER BY fiscal_year_whole;
+quit;
+
+/****************************************************************************************/
+/*Generates output for Heat Map of Allegation Types.*/
+proc sql;
+   CREATE TABLE cases_allegation_type AS 
+   SELECT DISTINCT 
+    case_id
+    , fiscal_year_whole
+    , action_primary_category
+    , fiscal_year_half
+   FROM fiscal_year
+   WHERE fiscal_year_whole GE 2010
+   ORDER BY fiscal_year_whole, action_primary_category;
+quit;
+
+proc sort data=cases_allegation_type(keep = action_primary_category) out=test nodupkey;
+by action_primary_category;
+run;
+
+/*Count actions by type per whole year.*/
+proc sort data = cases_allegation_type;
+	by fiscal_year_whole action_primary_category;
+run;
+
+proc means data = cases_allegation_type NOPRINT;
+by fiscal_year_whole action_primary_category;
+output out = heat_map;
+run;
+ 
+data heat_map (keep = fiscal_year_whole action_primary_category _FREQ_);
+   set heat_map (where = (_STAT_ = "N"));
+run;
+
+/*Calculate total actions per year.*/
+proc sort data=cases_allegation_type;
+	by fiscal_year_whole;
+run;
+
+proc means data=cases_allegation_type NOPRINT;
+	by fiscal_year_whole;
+	output out = sums;
+run;
+
+data sums (keep = fiscal_year_whole yearly_count);
+	set sums (where =(_STAT_ = "N"));
+	rename _FREQ_=yearly_count;
+run;
+
+/*Merge actions per whole year onto heat map*/
+proc sql;
+	CREATE TABLE heat_map AS
+	SELECT 
+    a.*
+    , b.yearly_count
+	FROM heat_map AS a
+	LEFT JOIN sums AS b
+	ON a.fiscal_year_whole = b.fiscal_year_whole;
+quit;
+
+/*Calculate percentages for whole year.*/
+data heat_map;
+	set heat_map;
+	percentage = _FREQ_ / yearly_count;
+run;
+
+/****************************************************************************************/
+/*Export results to Excel.*/
+proc export data = heat_map outfile = &outf.
+dbms = xlsx replace;
+sheet = "heat_map";
+run;
