@@ -1,6 +1,6 @@
 ########################################################
-#  Total new SEC actions by FY w/o matching SCA Action # 
-#      vs. new SEC actions w/ matching SCA Action      #
+#  Identifying SEC actions with Matching SCA Actions   #
+#        by Fiscal Year                                #
 #  Last Updated 8/11/2020                              #
 ########################################################
 
@@ -16,24 +16,24 @@ library(readr)
 # Import Database # 
 ###################
     
-# Import penalties from SEED database
-matched_seed <- read.csv(header$datasets("mst/sca/identified_matches/master_sets/seed_matched_databse2020-07-28.csv"))
+# Import penalties from database
+matched_data <- read.csv(header$datasets("mst/import_data.csv"))
 
 ############
 # Analysis # 
 ############
   
 #Subset imported data to variables of interest
-subset_seed <- select(matched_seed, c(seed_doc_num,seed_doc_date,match))
+subset_data <- select(matched_data, c(doc_num,doc_date,match))
 
 #Calculate fiscal year for each penalty
-subset_seed$fiscal_year <- ifelse(month(matched_seed$seed_doc_date) %in% c(10,11,12), year(matched_seed$seed_doc_date)+1, year(matched_seed$seed_doc_date)) 
+subset_data$fiscal_year <- ifelse(month(matched_data$doc_date) %in% c(10,11,12), year(matched_data$doc_date)+1, year(matched_data$doc_date)) 
   
 #Identify SEC filings with matching actions from SCA database
-subset_seed$sca_pair <- ifelse(is.na(matched_seed$match)|matched_seed$match=="N",0,1)
+subset_data$sca_pair <- ifelse(is.na(matched_data$match)|matched_data$match=="N",0,1)
 
 #Count number of matching SCA actions per SEC filing
-n_sca_pair <- aggregate(subset_seed$sca_pair, by=list(seed_doc_num=subset_seed$seed_doc_num, fiscal_year=subset_seed$fiscal_year), FUN=sum)
+n_sca_pair <- aggregate(subset_data$sca_pair, by=list(doc_num=subset_data$doc_num, fiscal_year=subset_data$fiscal_year), FUN=sum)
 
 #Create flags for no matching SCA action or with matching SCA action
 n_sca_pair$sca_match <- ifelse(n_sca_pair$x > 0, 1, 0)
@@ -55,4 +55,4 @@ n_sca_match_by_fy$perc_no_match <- (n_sca_match_by_fy$num_no_sca_match/(n_sca_ma
 ###################
   
 # Export -------------------------------------------------------------------
-write.xlsx(n_sca_match_by_fy, header$export("sca_matching/analyses/07r_matching_sec_actions_by_fy.xlsx"), sheetName="matching_sec_actions_by_fy")
+write.xlsx(n_sca_match_by_fy, header$export("export.xlsx"), sheetName="matching_sec_actions_by_fy")
