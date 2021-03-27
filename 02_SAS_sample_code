@@ -1,5 +1,5 @@
 /*******************************************************************
-    SEED: Heat Map of Allegations For Public Company Defendants
+    Analyzing SEC Allegations Against Public Company Defendants
     Last Updated 01.15.2021
 *******************************************************************/
 
@@ -11,10 +11,10 @@ proc datasets library=work nolist nowarn kill; run; quit;
 %set_caseroot(find_file=header.sas)
 %include "&caseroot./header.sas";
 * ********************************************************************* ;
-%let datab = "&windata.\import\seed_database\export_2020_11_05.xlsx";
-%let outf = "&exportdir./publications/2020_fall/02_Heatmap_Allegation_Type_2021_01_15.xlsx";
+%let datab = "&windata.\import\";
+%let outf = "&exportdir./publications/";
 
-/*This code generates the output for Number of actions by defendant type across years in the SEED publication. */
+/*This code calculates the number of actions filed by the SEC against different defendant types across years. */
 
 proc import datafile = &datab. out = nyu_export dbms = excelcs replace;
 run;
@@ -64,7 +64,7 @@ proc sql;
 quit;
 
 /****************************************************************************************/
-/*Generates output for Heat Map of Allegation Types.*/
+/*Generates output for Allegation Types by fiscal year and half year.*/
 proc sql;
    CREATE TABLE cases_allegation_type AS 
    SELECT DISTINCT 
@@ -110,7 +110,7 @@ data sums (keep = fiscal_year_whole yearly_count);
 	rename _FREQ_=yearly_count;
 run;
 
-/*Merge actions per whole year onto heat map*/
+/*Merge actions per whole year onto heat map.*/
 proc sql;
 	CREATE TABLE heat_map AS
 	SELECT 
