@@ -30,10 +30,7 @@ WHERE (BloombergDealName LIKE '%MSIX%'
 	AND BloombergDealName NOT LIKE 'IXIS 2005-HE1'
 ORDER BY BloombergDealName;
 
-ALTER TABLE int1 
-DROP COLUMN Servicer;
-
-/*Merge on information from another table to subsetted data.*/
+/*Merge on information from loan_setup table to subsetted data.*/
 CREATE TABLE int2 AS
 SELECT 
 	a.*
@@ -44,7 +41,7 @@ ON a.ABSNetLoanDealPK = b.ABSNetLoanDealFK;
 
 quit;
 
-/*Further restrict the combined dataset using newly merged variable.*/
+/*Further restrict the combined dataset.*/
 proc sql;
 
 CREATE TABLE int3 AS
@@ -75,7 +72,6 @@ data absnetloanid_trim;
 	loanid_num = input(loanid, 10.);
 	loanid_trim = put(loanid_num, 10.);
 run;
-
 
 proc sql;
 
@@ -135,5 +131,6 @@ ON a.ABSNetLoanPK = b.ABSNetLoanFK;
 
 quit;
 
+/****************************************************************************************/
 /*Compare with checking dataset.*/
 proc compare base = mst.natixis_deal_setup_lossactivity compare = check.natixis_lossactivity listvar; run;
