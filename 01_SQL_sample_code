@@ -1,3 +1,8 @@
+/*******************************************************************
+    Subsetting and Merging Loan Tape Information
+    Last Updated 11.05.2020
+*******************************************************************/
+
 *'; *"; run; quit; */;
 dm output 'clear';
 dm log 'clear';
@@ -8,6 +13,8 @@ proc datasets nolist library=work kill; run; quit;
 %set_caseroot(find_file=header.sas)
 %include "&caseroot.\header.sas";
 * *************************************************************** *;
+
+/*This code generates loan-level information for use in litigation involving mortgage-backed securities. */
 
 proc sql;
 
